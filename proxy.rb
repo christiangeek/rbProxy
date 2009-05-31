@@ -61,7 +61,7 @@ end
 
 class ProxyResponder
    def fetch
-        http = Net::HTTP.new(real_host(host))
+        http = Net::HTTP.new(real_host(host), 80)
         http = Net::HTTP.new(real_host(host), 443) if is_secure?
         http.use_ssl = true if is_secure?
         http.start
@@ -191,7 +191,7 @@ class ProxyResponder
             }
             end
             value.gsub!(host, server_host) unless header == "Location"
-            unless header == "Content-Type" || header == "Host" || header == "Connection" || header == "Keep-Alive" || header == "Content-Length" || header == "Cache-Control" || header == "Set-Cookie":
+            unless header == "Content-Type" || header == "Host" || header == "Connection" || header == "Keep-Alive" || header == "Content-Length" || header == "Cache-Control" || header == "Set-Cookie" || header == "Transfer-Encoding":
                extra << "#{header}: #{value}\r\n"
             end
           }
@@ -216,7 +216,7 @@ end
 
 @@host_lookup_table = {"www.mhfh.com" => "72.233.77.194", "mhfh.com" => "72.233.77.194"}
 @@host = "127.0.0.1"
-@@port = 80
+@@port = 3000
 
  EventMachine::run {
    EventMachine::start_server @@host, @@port, ProxyServer
