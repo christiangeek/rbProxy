@@ -97,7 +97,7 @@ class ProxyResponder
    def server_host
        unless @server_host :
             @server_host = "#{@@host}:#{@@port}"
-            @server_host = client_response.headers["host"] if client_response.headers["host"]
+            @server_host = client_response.headers["Host"] if client_response.headers["Host"]
        end
        @server_host
    end
