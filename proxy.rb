@@ -3,6 +3,7 @@
 require 'rubygems'
 require 'eventmachine'
 require 'net/http'
+require 'net/https'
 require 'cgi'
 require 'uri'
 require 'thread'
@@ -14,7 +15,7 @@ require 'thread'
 
    def receive_data data
       response = ProxyResponder.new(data)
-     send_data response
+       send_data response.to_s
      close_connection_after_writing 
    end
 
@@ -60,7 +61,10 @@ end
 
 class ProxyResponder
    def fetch
-        http = Net::HTTP.start(real_host(host))
+        http = Net::HTTP.new(real_host(host))
+        http = Net::HTTP.new(real_host(host), 443) if is_secure?
+        http.use_ssl = true if is_secure?
+        http.start
         response = http.request_get(path, headers_to_send) unless client_response.method == "POST"
         response = http.request_post(path,client_response.data.join("\r\n"), headers_to_send) if client_response.method == "POST"
       http.finish
@@ -83,7 +87,7 @@ class ProxyResponder
    end
    
    def save_host?
-      if client_response.path.match(/^\/http:\/\//) and client_response.method != "POST":
+      if client_response.path.match(/^\/https?:\/\//) and client_response.method != "POST":
         true
       else 
         false 
@@ -93,7 +97,7 @@ class ProxyResponder
    def server_host
        unless @server_host :
             @server_host = "#{@@host}:#{@@port}"
-            @server_host = client_response.headers["Host"] if client_response.headers["Host"]
+            @server_host = client_response.headers["rbProxy_host"] if client_response.headers["rbProxy_host"]
        end
        @server_host
    end
@@ -107,7 +111,7 @@ class ProxyResponder
         headers_to_send.each {|x, y|
             y.gsub!(server_host, host)
         }
-        headers_to_send.delete_if {|x, y| x == "Accept-encoding"}
+        headers_to_send.delete_if {|x, y| x == "Accept-encoding" || x == "If-modified-since"}
         headers_to_send
    end
    
@@ -129,15 +133,23 @@ class ProxyResponder
    
    def url
          url = "/"
-         url = client_response.path.gsub(/^\/http:\/\//, 'http://') if client_response.path
+         url = client_response.path.gsub(/^\/http(s)?:\/\//, 'http\1://') if client_response.path
          url.gsub!(/^\/nocache\//, "")
          
          url
    end
    
+   def is_secure?
+    is_secure = false
+    is_secure = true if cookies and cookies["rbProxy_secure"] == "true"
+    is_secure = true if uri.scheme == "https"
+    is_secure = false if uri.scheme == "http"
+    is_secure
+   end
+   
    def host 
     host = ""
-    host = cookies["host"] if cookies and cookies["host"]
+    host = cookies["rbProxy_host"] if cookies and cookies["rbProxy_host"]
     host = uri.host if uri.host
     host
    end
@@ -178,12 +190,12 @@ class ProxyResponder
              extra << "Set-Cookie: #{sub_value}\r\n"
             }
             end
-            value.gsub!(host, server_host)
+            value.gsub!(host, server_host) unless header == "Location"
             unless header == "Content-Type" || header == "Host" || header == "Connection" || header == "Keep-Alive" || header == "Content-Length" || header == "Cache-Control" || header == "Set-Cookie":
                extra << "#{header}: #{value}\r\n"
             end
           }
-         generateHTTP(buf, @code, res.header["Content-type"], extra) 
+         generateHTTP(buf, code, res.header["Content-type"], extra) 
          end
    
    def initialize(data)
@@ -192,7 +204,7 @@ class ProxyResponder
          @response = ""
          @data = data
          if save_host?:
-            @response = generateHTTP("", "301 Moved Permanently", "text/html", "Set-Cookie: host=#{host}; path=/; expires=0\r\nLocation: #{path}") 
+            @response = generateHTTP("", "301 Moved Permanently", "text/html", "Set-Cookie: rbProxy_host=#{host}; path=/; expires=0\r\nSet-Cookie: rbProxy_secure=#{is_secure?}; path=/; expires=0\r\nLocation: #{path}") 
          else 
             @response = proxy_response
          end
